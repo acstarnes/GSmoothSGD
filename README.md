@@ -1,6 +1,8 @@
 # GSmoothSGD
 Code for "Gaussian smoothing stochastic gradient descent"
 
+To run, use the following `python GSmoothSGD.py -c='config'` where `config` can be replace with the name of the desired config file.
+
 The provided `requirements.yml` file can be used to create a conda environment to run this code.
 
 ## Config Info
