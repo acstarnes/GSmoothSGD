@@ -1,8 +1,9 @@
 # To run:
 # 1. Specify any changes you have in the "Running hyperparameter search" section at the bottom
 #      This includes which parameters you want to search over as well as the dataset and optimizer.
-# 2. Activate the environment created from the requirements.txt file
-# 3. Run `python hyperparameter_search.py`
+# 2. Specify the optimizer in build_cnn and build_smooth_cnn functions
+# 3. Activate the environment created from the requirements.txt file
+# 4. Run `python hyperparameter_search.py`
 #
 # The output will be a csv file.
 
