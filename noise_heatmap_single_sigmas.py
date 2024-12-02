@@ -3,8 +3,9 @@
 # To run:
 # 1. Specify any changes you have in the "Building Heatmap" section at the bottom
 #      This includes which parameters you want to search over as well as the dataset and optimizer.
-# 2. Activate the environment created from the requirements.txt file
-# 3. Run `python noise_heatmap_single_sigmas.py`
+# 2. Specify the optimizer in build_cnn and build_smooth_cnn functions
+# 3. Activate the environment created from the requirements.txt file
+# 4. Run `python noise_heatmap_single_sigmas.py`
 #
 # The output will be a csv file.
 
@@ -26,6 +27,8 @@ from tensorflow.keras.callbacks import EarlyStopping
 import tensorflow as tf
 
 import math
+
+import os.path
 
 
 #################################################################################################
@@ -200,10 +203,11 @@ def build_cnn(
         outputs = y
     )
 
+    # Pick the optimizer here!
     model.compile(
         loss = 'mse',
-        optimizer = SGD(learning_rate),
-        # optimizer = Adam(learning_rate),
+        # optimizer = SGD(learning_rate),
+        optimizer = Adam(learning_rate),
         metrics = ['accuracy']
     )
 
@@ -241,10 +245,11 @@ def build_smooth_cnn(
         outputs = y
     )
 
+    # Pick the optimizer here!
     model.compile(
         loss = 'mse',
-        optimizer = SGD(learning_rate),
-        # optimizer = Adam(learning_rate),
+        # optimizer = SGD(learning_rate),
+        optimizer = Adam(learning_rate),
         metrics = ['accuracy']
     )
 
@@ -257,8 +262,8 @@ print('Building Heatmap')
 from itertools import product
 
 # Specify these (at least)
-dataset = 'mnist'
-optimizer = 'sgd'
+dataset = 'cifar10'
+optimizer = 'adam' # This is for naming only, you need to specify the optimizer in the "build_model" functions.
 
 mnist_regularizers = [1e-7,1e-7,1e-5,1e-5]
 x_train,y_train,x_test,y_test,y_train_sparse,y_test_sparse = load_environment(dataset)
@@ -275,77 +280,103 @@ scnn_init = build_smooth_cnn(
     learning_rate=0.1
 )
 
-for noise in tqdm(product([0,0.25,0.5,0.75,1.],[0,0.1,0.2,0.3,0.4])):
+if not os.path.isfile(f'initial_cnn_heatmap_{dataset}.weights.h5'):
+    # Create initial smooth CNN
+    scnn_init.save_weights(f'initial_cnn_heatmap_{dataset}.weights.h5')
 
-    x_train_noise = add_input_noise(x_train, noise = noise[0])
-    y_train_noise,y_train_sparse_noise = add_label_noise(y_train, noise = noise[1])
+rng = np.random.default_rng(seed=586653)
 
-    # Regular CNN
-    cnn = build_cnn(input_shape=x_train[0].shape)
-    cnn.set_weights(scnn_init.get_weights())
+for seed in tqdm(rng.integers(low=0,high=1e8,size=1), desc = 'Seed'):
 
-    early_stop = EarlyStopping(monitor = 'val_loss',patience = 2)
-    cnn.fit(
-        x_train_noise,
-        y_train_sparse_noise,
-        # epochs = 125,
-        # epochs = 50,
-        epochs = 20,
-        batch_size = 16,
-        validation_data = (x_test,y_test_sparse),
-        callbacks = [early_stop]
-    )
+    tf.keras.backend.clear_session()
+    scnn_init.load_weights(f'initial_cnn_heatmap_{dataset}.weights.h5')
 
-    temp = cnn.history.history
-    temp_dict = {k:[temp[k][-1]] for k,v in temp.items()}
-    temp_dict['x'] = noise[0]
-    temp_dict['y'] = noise[1]
-    temp_dict['s'] = 0
+    for noise in tqdm(product([1.,0.75,0.5,0.25,0],[0,0.1,0.2,0.3,0.4]), desc = 'Noise', leave = False):
 
-    pd.DataFrame(
-        temp_dict
-    ).to_csv(f'noise_heatmap_{dataset}_{optimizer}.csv', index = False, mode = 'a', header = False)
+        x_train_noise = add_input_noise(x_train, noise = noise[0])
+        y_train_noise,y_train_sparse_noise = add_label_noise(y_train, noise = noise[1])
 
-    # Smooth CNN
-    for s in [1.,0.5,0.1,0.01]:
-
-        if s == 1.:
-            regularizers = [1e-7,1e-7,1e-5,1e-5]
-        elif s == 0.5:
-            regularizers = [1e-7,1e-7,1e-5,1e-5]
-        elif s == 0.1:
-            regularizers = [1e-7,1e-7,1e-5,1e-5]
-        elif s == 0.01:
-            regularizers = [1e-7,1e-5,1e-5,1e-5]
-        else:
-            regularizers = [1e-7,1e-7,1e-5,1e-5]
-
-        sigma = s
-        scnn_iter = build_smooth_cnn(
-            sigma = s,
-            input_shape=x_train[0].shape,
-            regularizer_strength=regularizers,
-            learning_rate = 0.1
-        )
-        scnn_iter.set_weights(scnn_init.get_weights())
+        # Regular CNN
+        cnn = build_cnn(input_shape=x_train[0].shape, learning_rate = 1e-4)
+        cnn.set_weights(scnn_init.get_weights())
 
         early_stop = EarlyStopping(monitor = 'val_loss',patience = 2)
-        scnn_iter.fit(
+        cnn.fit(
             x_train_noise,
             y_train_sparse_noise,
-            epochs = 20,
-            # epochs = 50,
-            batch_size = 16,
+            epochs = 25,
+            batch_size = 1,
             validation_data = (x_test,y_test_sparse),
             callbacks = [early_stop]
         )
 
-        temp = scnn_iter.history.history
+        temp = cnn.history.history
         temp_dict = {k:[temp[k][-1]] for k,v in temp.items()}
         temp_dict['x'] = noise[0]
         temp_dict['y'] = noise[1]
-        temp_dict['s'] = s
+        temp_dict['s'] = 0
 
         pd.DataFrame(
             temp_dict
         ).to_csv(f'noise_heatmap_{dataset}_{optimizer}.csv', index = False, mode = 'a', header = False)
+
+        del cnn
+
+        # Smooth CNN
+        for s in tqdm([1.,0.5,0.1,0.01], desc = 'Sigma', leave = False):
+            
+            # For each s-value, specify regularizer strength
+            if s == 1.:
+                # regularizers = [1e-7,1e-7,1e-7,1e-5]
+                # learning_rate = 1e-4
+                regularizers = [1e-7,1e-7,1e-7,1e-7]
+                learning_rate = 1e-4
+            elif s == 0.5:
+                # regularizers = [1e-7,1e-7,1e-7,1e-5]
+                # learning_rate = 1e-3
+                regularizers = [1e-7,1e-7,1e-7,1e-5]
+                learning_rate = 1e-4
+            elif s == 0.1:
+                # regularizers = [1e-5,1e-7,1e-5,1e-7]
+                # learning_rate = 1e-2
+                regularizers = [1e-7,1e-7,1e-5,1e-5]
+                learning_rate = 1e-4
+            elif s == 0.01:
+                # regularizers = [1e-7,1e-7,1e-5,1e-7]
+                # learning_rate = 1e-2
+                regularizers = [1e-7,1e-7,1e-5,1e-5]
+                learning_rate = 1e-4
+            else:
+                regularizers = [1e-7,1e-7,1e-5,1e-5]
+                learning_rate = 1e-4
+
+            sigma = s
+            scnn_iter = build_smooth_cnn(
+                sigma = s,
+                input_shape=x_train[0].shape,
+                regularizer_strength=regularizers,
+                learning_rate = learning_rate
+            )
+            scnn_iter.set_weights(scnn_init.get_weights())
+
+            early_stop = EarlyStopping(monitor = 'val_loss',patience = 2)
+            scnn_iter.fit(
+                x_train_noise,
+                y_train_sparse_noise,
+                epochs = 25,
+                batch_size = 1,
+                validation_data = (x_test,y_test_sparse),
+                callbacks = [early_stop]
+            )
+
+            temp = scnn_iter.history.history
+            temp_dict = {k:[temp[k][-1]] for k,v in temp.items()}
+            temp_dict['x'] = noise[0]
+            temp_dict['y'] = noise[1]
+            temp_dict['s'] = s
+
+            pd.DataFrame(
+                temp_dict
+            ).to_csv(f'noise_heatmap_{dataset}_{optimizer}.csv', index = False, mode = 'a', header = False)
+
+            del scnn_iter
