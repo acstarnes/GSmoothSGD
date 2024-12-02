@@ -2,11 +2,11 @@
 # This is named with `_sgd` to indicate that without changes it uses SGD.
 #
 # To run:
-# 1. Specify any changes you have in the "Building Heatmap" section at the bottom
+# 1. Specify any changes you have in the "Running hyperparameter search" section at the bottom
 #      This includes which parameters you want to search over as well as the dataset and optimizer.
 # 2. Specify the optimizer in build_cnn and build_smooth_cnn functions
 # 3. Activate the environment created from the requirements.txt file
-# 4. Run `python noise_heatmap_single_sigmas.py`
+# 4. Run `python hyperparameter_search.py`
 #
 # The output will be a csv file.
 
